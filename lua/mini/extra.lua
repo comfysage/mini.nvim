@@ -1229,6 +1229,57 @@ MiniExtra.pickers.lsp = function(local_opts, opts)
   vim.lsp.buf[scope](buf_lsp_opts)
 end
 
+--- Manual pages
+---
+--- Pick manual page. Like described in |ft-man-plugin|.
+--- Notes:
+--- - Requires `man` executable. Not present on Windows.
+--- - Requires Neovim>=0.10.
+--- - Shows page in the target window. Use |MiniPick-actions-choose| to split.
+--- - Does not use |:Man|.
+---
+---@param local_opts __extra_pickers_local_opts
+---   Not used at the moment.
+---@param opts __extra_pickers_opts
+---
+---@return __extra_pickers_return
+MiniExtra.pickers.manpages = function(local_opts, opts)
+  local pick = H.validate_pick('manpages')
+  if vim.fn.has('nvim-0.10') == 0 then H.error('`manpages` picker needs Neovim>=0.10') end
+
+  local show_man = function(buf_id, item, add_name)
+    -- Format: <name><space>(<section>)<space>-<space><description>
+    local name, section = (item or ''):match('^(.-)%s+%((.-)%)%s+%-')
+    if name == nil or section == nil then return end
+    name = (name:gsub(',.*$', ''))
+
+    -- Compute manpage content, possibly hard wrapped to window width
+    -- Ideally, no hard wrapping should be done, but it doesn't look good
+    local win_id = vim.fn.win_findbuf(buf_id)[1]
+    local width = H.is_valid_win(win_id) and vim.api.nvim_win_get_width(win_id) or 999
+    local sys_out = vim.system({ 'man', section, name }, { env = { MANWIDTH = width } }):wait()
+    local lines = vim.split(sys_out.stdout or '', '\n')
+
+    vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
+    vim.bo[buf_id].modified = false
+    vim.bo[buf_id].filetype = 'man'
+    if add_name then vim.api.nvim_buf_set_name(buf_id, string.format('man://%s(%s)', name, section)) end
+  end
+
+  local preview = function(buf_id, item) show_man(buf_id, item, false) end
+
+  local choose = function(item)
+    local win_id_target = MiniPick.get_picker_state().windows.target
+    local buf_id = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_win_set_buf(win_id_target, buf_id)
+    show_man(buf_id, item, true)
+  end
+
+  local source = { name = 'Manpages', choose = choose, preview = preview }
+  opts = vim.tbl_deep_extend('force', { source = source }, opts or {})
+  return pick.builtin.cli({ command = { 'man', '-k', '.' } }, opts)
+end
+
 --- Neovim marks picker
 ---
 --- Pick and preview position of Neovim |mark|s.
